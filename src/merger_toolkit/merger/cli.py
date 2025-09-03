@@ -4,40 +4,28 @@ import sys
 import argparse
 import io
 import pathspec
-from importlib import resources # パッケージ内のリソースを読み込むためにインポート
+from importlib import resources
 
-# --- クリップボード機能のためのインポート ---
 try:
     import pyperclip
     PYPERCLIP_AVAILABLE = True
 except ImportError:
     PYPERCLIP_AVAILABLE = False
 
-# --- 除外設定の再定義 ---
-
-# レイヤー1: 強制除外リスト (常に適用)
-# .gitignore の内容に関わらず、これらのバイナリファイル等は常に除外されます。
 FORCE_EXCLUDE_EXTENSIONS = {
-    # 画像ファイル
     '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.ico', '.svg', '.webp',
-    # 動画・音声ファイル
     '.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv', '.mp3', '.wav', '.ogg', '.flac', '.aac',
-    # 圧縮ファイル・バイナリなど
     '.zip', '.tar', '.gz', '.rar', '.7z', '.jar', '.war', '.ear', '.exe', '.dll', '.so',
     '.dylib', '.o', '.a', '.lib', '.class', '.app', '.msi', '.pdf', '.doc', '.docx',
     '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.sqlite', '.db', '.mdb',
     '.dbf', '.ttf', '.otf', '.woff', '.woff2', '.eot', '.pyc', '.pyd', '.dat', '.bin',
 }
-FORCE_EXCLUDE_DIRS = {
-    '.git',  # .git ディレクトリはスキャン対象外
-}
-# --- 除外設定ここまで ---
+FORCE_EXCLUDE_DIRS = {'.git'}
 
 
 def merge_repository_to_string(input_dir, gitignore_spec, final_exclude_dirs, final_exclude_ext, final_exclude_files, verbose=False):
-    # (この関数の内容は変更なしのため、簡潔にするため省略します)
-    # ... 前回の回答と同じロジック ...
     string_io = io.StringIO()
+    # (この関数のロジックは変更なし)
     for root, dirs, files in os.walk(input_dir, topdown=True):
         dirs[:] = [d for d in dirs if d not in final_exclude_dirs]
         if gitignore_spec:
@@ -86,11 +74,7 @@ def merge_repository_to_string(input_dir, gitignore_spec, final_exclude_dirs, fi
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Merge repository files into a single output, respecting .gitignore and other rules.",
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-    # ... (引数の定義は変更なし) ...
+    parser = argparse.ArgumentParser(description="Merge repository files into a single output, respecting .gitignore and other rules.", formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("input_dir", nargs='?', default='.', help="Path to the input directory to scan (default: current directory).")
     parser.add_argument("-o", "--output", metavar="OUTPUT_FILE", default=None, help="Path to the output file. If not specified, content is copied to the clipboard.")
     parser.add_argument("-xd", "--exclude-dir", action='append', default=[], metavar='DIR', help="Add a directory name to exclude.")
@@ -100,7 +84,6 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true", help="Print verbose output.")
     args = parser.parse_args()
 
-    # ... (クリップボードとディレクトリのチェックは変更なし) ...
     if not args.output and not PYPERCLIP_AVAILABLE:
         print("\nError: To copy to clipboard, 'pyperclip' library is required.", file=sys.stderr)
         print("Please install it ('pip install pyperclip') or use the -o/--output option.", file=sys.stderr)
@@ -109,61 +92,42 @@ def main():
         print(f"Error: Input directory '{args.input_dir}' not found.", file=sys.stderr)
         return 1
         
-    # --- .gitignore の読み込みロジックを更新 ---
     gitignore_spec = None
     if not args.no_gitignore:
         gitignore_path = os.path.join(args.input_dir, '.gitignore')
         if os.path.isfile(gitignore_path):
-            if args.verbose:
-                print(f"Using local .gitignore from: {gitignore_path}")
+            if args.verbose: print(f"Using local .gitignore from: {gitignore_path}")
             with open(gitignore_path, 'r', encoding='utf-8') as f:
                 gitignore_spec = pathspec.PathSpec.from_lines('gitwildmatch', f)
         else:
-            # ローカルに.gitignoreがない場合、パッケージ内のデフォルトを読み込む
-            if args.verbose:
-                print("No local .gitignore found. Attempting to use built-in default .gitignore.")
+            if args.verbose: print("No local .gitignore found. Attempting to use built-in default .gitignore.")
             try:
-                # 'repo_merger.data' パッケージ内の 'default.gitignore' を読み込む
-                default_gitignore_content = resources.files('repo_merger.data').joinpath('default.gitignore').read_text(encoding='utf-8')
+                # 変更点: パッケージ内のリソースへのパスを新しい構造に合わせて修正
+                default_gitignore_content = resources.files('merger_toolkit.merger.data').joinpath('default.gitignore').read_text(encoding='utf-8')
                 gitignore_spec = pathspec.PathSpec.from_lines('gitwildmatch', default_gitignore_content.splitlines())
             except (FileNotFoundError, ModuleNotFoundError):
-                if args.verbose:
-                    print("Warning: Built-in default .gitignore not found. Proceeding without gitignore rules.")
+                if args.verbose: print("Warning: Built-in default .gitignore not found. Proceeding without gitignore rules.")
 
-    # --- 最終的な除外リストの構築 ---
-    # 強制除外とユーザー指定の除外のみを設定
     final_exclude_dirs = set(FORCE_EXCLUDE_DIRS)
     final_exclude_ext = {ext.lower() for ext in FORCE_EXCLUDE_EXTENSIONS}
-    final_exclude_files = set() # 強制除外するファイル名は基本的にはない
-
+    final_exclude_files = set()
     final_exclude_dirs.update(args.exclude_dir)
     final_exclude_ext.update({ext.lower() if ext.startswith('.') else '.' + ext.lower() for ext in args.exclude_ext})
     final_exclude_files.update(args.exclude_file)
-
-    # .gitignoreが一切使われなかった場合のみ、最低限のフォールバックを追加
-    if gitignore_spec is None:
-        if args.verbose:
-            print("No .gitignore rules applied. Using minimal fallback exclusions.")
-        # ここに、どうしても除外したいものがあれば追加できますが、
-        # 基本的にdefault.gitignoreに任せるため、空でも良いでしょう。
-        # final_exclude_dirs.update({'node_modules', 'venv'}) # 例
     
-    # ... (以降の処理は変更なし) ...
     try:
         merged_content = merge_repository_to_string(
-            args.input_dir,
-            gitignore_spec,
-            final_exclude_dirs,
-            final_exclude_ext,
-            final_exclude_files,
-            args.verbose
+            args.input_dir, gitignore_spec, final_exclude_dirs,
+            final_exclude_ext, final_exclude_files, args.verbose
         )
         if not merged_content.strip():
             print("\nWarning: No files were found or processed based on the criteria.")
             return 0
+        
+        # This custom prefix can be removed if not needed.
         final_output = "差分はいらない。変更が必要なファイルのみを、各ファイルごとにコードブロックで出力してください。\nまた、必要最低限の変更にしてください。リファクタなどは不要です。\n\n" + merged_content.strip() + "\n"
+        
         if args.output:
-            # ... (ファイル出力) ...
             output_path = os.path.abspath(args.output)
             try:
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -173,7 +137,6 @@ def main():
                 print(f"\nError writing to file '{output_path}': {e}", file=sys.stderr)
                 return 1
         else:
-            # ... (クリップボードコピー) ...
             try:
                 pyperclip.copy(final_output)
                 content_size_mb = len(final_output.encode('utf-8')) / (1024 * 1024)
@@ -190,6 +153,3 @@ def main():
         return 1
 
     return 0
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -1,133 +1,187 @@
-# Repo Merger (リポジトリ・マージャー)
+# Repo Merger & Code Collector Toolkit
 
 [![PyPI version](https://badge.fury.io/py/repo-merger-cli.svg)](https://badge.fury.io/py/repo-merger-cli)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-リポジトリ内のテキストファイルを、LLM（大規模言語モデル）のプロンプト用に、単一の文字列へとマージするためのCLIツールです。`.gitignore`やバイナリファイルの除外ルールを賢く尊重します。
+LLM（大規模言語モデル）との対話を効率化するために設計された、2つの強力なCLIツールキットです。
 
-`repo-merge`は指定されたディレクトリをスキャンし、関連するすべてのテキストファイルをMarkdownのコードブロック形式で一つの出力にまとめ、クリップボードにコピーします。GPT-4やClaudeのようなLLMに、あなたのコードベース全体の文脈を簡単に提供できるよう設計されています。
+1.  **`repo-merge`**: リポジトリ全体のテキストファイルをインテリジェントにフィルタリングし、単一のプロンプト用テキストにマージします。
+2.  **`code-collector`**: 指定した単一の関数から始まり、その依存関係をコードレベルで追跡し、関連する部分だけをピンポイントで収集します。
+
+プロジェクト全体のコンテキストを渡したい時は`repo-merge`を、特定の機能やバグについて質問したい時は`code-collector`を使うことで、LLMとの対話の質と効率を劇的に向上させます。
 
 ## ✨ 主な機能
 
--   **クリップボード優先**: マージされたコンテンツは、デフォルトでクリップボードにコピーされ、すぐに貼り付けられます。
--   **`.gitignore`対応**: `.gitignore`ファイルに記述された除外ルールを自動的に尊重します。
--   **スマートなフィルタリング**: バイナリファイル（画像、動画、実行ファイルなど）や、不要なファイル・ディレクトリ（`node_modules`、`.git`など）をインテリジェントに除外します。
--   **カスタマイズ可能**: ファイル、ディレクトリ、拡張子単位で独自の除外ルールを追加できます。
--   **シンプルなCLI**: 使いやすく、直感的なデフォルト設定を備えています。
+-   **デュアルツール**: プロジェクト全体のマージと、関数単位の依存関係収集の2つのモードを提供。
+-   **複数言語対応**: `code-collector`はPython（.py, .pyw）とTypeScript/JavaScript（.ts, .tsx, .js, .jsx）の静的コード解析をサポート。
+-   **スマートフィルタリング**: `.gitignore`ルールを尊重し、バイナリファイルや不要なディレクトリ（`.git`, `node_modules`など）を自動で除外。
+-   **クリップボード優先**: 結果はデフォルトでクリップボードにコピーされ、すぐにLLMに貼り付け可能。
+-   **カスタマイズ可能**: `repo-merge`では、独自の除外ルールを柔軟に追加できます。
+-   **簡単なインストール**: pipでインストールすれば、すぐに2つのコマンドが利用可能になります。
 
 ## 📥 インストール
 
-`repo-merge`は`pip`を使ってインストールできます。
+このツールキットは`pip`を使ってインストールできます。
 
 ```bash
-pip install git+https://github.com/HawkClaws/repo-merger.git
+# PyPIからインストール（今後リリース予定）
+pip install repo-merger-cli
+
+# GitHubリポジトリから直接インストール
+pip install git+https://github.com/あなたのユーザー名/あなたのリポジトリ名.git
 ```
 
-このツールは Python 3.8 以上が必要です。
+**要件:**
+- Python 3.9 以上
+- `code-collector`のTypeScript解析機能を利用する場合は、Node.jsとnpmがインストールされている必要があります。
+
+ツールのインストール時に、必要なNode.jsパッケージ(typescript)も自動でインストールされます。
 
 ## 🚀 使い方
 
-`repo-merge`の使い方は簡単です。プロジェクトのルートディレクトリに移動して、コマンドを実行するだけです。
+インストールが完了すると、`repo-merge`と`code-collector`の2つのコマンドが利用可能になります。
 
-### 基本的な使い方
+### repo-merge コマンド
 
-カレントディレクトリをスキャンし、マージした結果をクリップボードにコピーします。
+リポジトリ全体をスキャンし、1つのテキストファイルにマージします。
+
+#### 基本的な使い方
+
+プロジェクトのルートディレクトリでコマンドを実行すると、結果がクリップボードにコピーされます。
 
 ```bash
+# カレントディレクトリをスキャン
 repo-merge
-```
 
-特定のディレクトリをスキャンする場合：
-
-```bash
+# 特定のディレクトリをスキャン
 repo-merge /path/to/your/project
-```
 
-### ファイルへの保存
-
-クリップボードへのコピーではなく、結果をファイルに保存したい場合は、`-o`または`--output`フラグを使用します。
-
-```bash
-repo-merge -o merged_output.txt
-```
-
-### 除外ルールのカスタマイズ
-
-デフォルト設定や`.gitignore`に加えて、独自の除外ルールを追加できます。
-
-#### ディレクトリを除外: `-xd` または `--exclude-dir`
-
-```bash
-# 'docs' ディレクトリを除外する
-repo-merge -xd docs
-```
-
-#### 拡張子を除外: `-xe` または `--exclude-ext`
-
-```bash
-# すべてのマークダウンファイルを除外する
-repo-merge -xe .md
-```
-
-#### 特定のファイルを除外: `-xf` または `--exclude-file`
-
-```bash
-# 特定の設定ファイルを除外する
-repo-merge -xf config.dev.json
-```
-
-これらのフラグは複数回指定できます。
-
-### その他のオプション
-
-#### 詳細モード (Verbose Mode)
-どのファイルが処理され、どのファイルがスキップされたかを確認するには、`-v`または`--verbose`フラグを使用します。
-
-```bash
+# 詳細な出力を表示
 repo-merge -v
 ```
 
-#### .gitignoreを無視
-`.gitignore`を無効にし、組み込みルールとカスタムルールのみを使用するには、`--no-gitignore`フラグを使用します。
+#### ファイルへの保存
+
+`-o`または`--output`フラグで、結果をファイルに出力します。
 
 ```bash
+repo-merge -o merged_output.md
+repo-merge /path/to/project -o output.txt
+```
+
+#### 除外ルールのカスタマイズ
+
+- `-xd`, `--exclude-dir`: ディレクトリを除外 (例: `-xd docs`)
+- `-xe`, `--exclude-ext`: 拡張子を除外 (例: `-xe .md`)  
+- `-xf`, `--exclude-file`: ファイル名で除外 (例: `-xf config.dev.json`)
+- `--no-gitignore`: .gitignoreファイルを無視
+
+```bash
+# docsディレクトリと.mdファイルを除外
+repo-merge -xd docs -xe .md
+
+# 複数の除外ルールを適用
+repo-merge -xd tests -xd __pycache__ -xe .pyc -xf README.md
+
+# .gitignoreを無視してすべてのファイルをスキャン
 repo-merge --no-gitignore
 ```
 
-### コマンドラインヘルプ
+### code-collector コマンド
 
-すべてのコマンドとオプションの一覧は、`--help`フラグで確認できます。
+指定した関数を開始点として、その定義や呼び出し先のコードを収集します。
+
+#### 基本的な使い方
+
+プロジェクトのルート、起点となるファイル、関数名を指定します。結果はクリップボードにコピーされます。
+
+```bash
+# TypeScriptの関数を収集
+code-collector -f src/services/api.ts -func fetchUserData
+
+# Pythonの関数を収集
+code-collector -f my_app/utils.py -func calculate_total
+
+# プロジェクトパスを明示的に指定
+code-collector /path/to/project -f src/main.py -func run_app
+```
+
+#### ファイルへの保存
+
+`-o`または`--output`フラグで、結果をファイルに出力します。
+
+```bash
+code-collector -f src/main.py -func run_app -o app_context.md
+```
+
+#### ヘルプ
+
+各コマンドの詳細なオプションは`--help`で確認できます。
 
 ```bash
 repo-merge --help
+code-collector --help
 ```
 
 ## 🛠️ 動作の仕組み
 
-このツールは指定されたディレクトリを再帰的にスキャンし、以下の3層の除外ロジックを適用します。
+### `repo-merge`
+指定されたディレクトリを再帰的にスキャンし、以下のルールでファイルをフィルタリングします：
+1.  **強制除外**: 組み込みのバイナリ拡張子リスト（画像、動画、実行ファイルなど）と`.git`などを常に除外。
+2.  **`.gitignore`**: プロジェクトの`.gitignore`ルールを適用。見つからない場合は組み込みのデフォルトルールを使用。
+3.  **カスタムルール**: ユーザーがコマンドラインで指定した除外ルールを適用。
 
-1.  **強制除外**: 組み込みのバイナリファイルの拡張子（`.png`, `.mp4`, `.exe`など）と、重要なディレクトリ（`.git`など）は常に除外されます。
+出力形式は以下のようにMarkdown形式のコードブロックとしてファイル内容をマージします：
 
-2.  **`.gitignore` ルール**: `.gitignore`ファイルが存在する場合、そのルールが適用されます。これがプロジェクト固有の除外ルールの基本となります。
-
-3.  **デフォルト/ユーザー指定の除外**:
-    -   `.gitignore`が見つからない場合、一般的な開発ディレクトリ（`node_modules`, `venv`など）を含むデフォルトのリストがフォールバックとして使用されます。
-    -   コマンドラインで指定されたルール（`-xd`, `-xe`, `-xf`）は常に適用されます。
-
-処理対象となった各ファイルの内容は、ファイルパスを情報文字列に持つMarkdownのコードブロックでラップされます。
-
-```markdown
-```src/main.py
-print("Hello, World!")
+````
+```path/to/file.py
+ファイルの内容
 ```
 
-```utils/helpers.py
-def helper_function():
-    return True
+```path/to/another/file.js
+別のファイルの内容
+```
+````
+
+### `code-collector`
+静的コード解析を用いて、以下のように依存関係を追跡します：
+1.  **解析 (Parse)**: 対象ファイルをAST（抽象構文木）に変換し、コードの構造を把握します。
+2.  **収集 (Collect)**: 指定された関数のソースコードを収集します。
+3.  **追跡 (Trace)**: 関数内で呼び出されている他の関数を特定し、インポート文をたどって追跡対象を広げます。
+4.  **繰り返し**: 新たに見つかった関数についても、キューが空になるまでこのプロセスを繰り返します。
+
+#### サポートされている言語
+- **Python**: `.py`, `.pyw`ファイル（ASTベースの解析）
+- **TypeScript/JavaScript**: `.ts`, `.tsx`, `.js`, `.jsx`ファイル（TypeScript compilerを使用）
+
+## 💡 使用例
+
+### 例1: プロジェクト全体をLLMに送信
+```bash
+# プロジェクト全体をマージしてクリップボードにコピー
+repo-merge
+
+# テストファイルとドキュメントを除外
+repo-merge -xd tests -xd docs -xe .md
 ```
 
+### 例2: バグのある関数とその依存関係を調査
+```bash
+# 問題のある関数と関連コードのみを収集
+code-collector -f src/payment/processor.py -func process_payment
+```
 
-この整形された出力が、クリップボードにコピーされるか、ファイルに保存されます。
+### 例3: 特定の機能の実装を理解
+```bash
+# フロントエンドのAPI呼び出し部分を追跡
+code-collector -f src/components/UserProfile.tsx -func fetchUserData
+```
+
+## ⚠️ 制限事項
+
+- `code-collector`の依存関係追跡は静的解析に基づいているため、動的な関数呼び出し（`getattr`、`eval`など）は検出されません。
+- TypeScript解析機能を使用するには、Node.js 16以上とnpmが必要です。
+- 非常に大きなプロジェクトでは、出力が制限を超える場合があります。除外ルールを活用してください。
 
 ## 📜 ライセンス
 
@@ -136,3 +190,15 @@ def helper_function():
 ## 🤝 コントリビューション
 
 コントリビューション、Issue、機能リクエストを歓迎します！お気軽にIssuesページをご確認ください。
+
+### 開発者向け情報
+
+```bash
+# 開発モードでインストール
+pip install -e .
+
+# 仮想環境を使用する場合
+python3 -m venv venv
+source venv/bin/activate  # Windowsの場合: venv\\Scripts\\activate
+pip install -e .
+```

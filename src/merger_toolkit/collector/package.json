@@ -1,0 +1,9 @@
+{
+  "name": "code-collector-parser",
+  "version": "1.0.0",
+  "description": "Internal TypeScript parser for repo-merger-cli",
+  "private": true,
+  "dependencies": {
+    "typescript": "^5.0.0"
+  }
+}
