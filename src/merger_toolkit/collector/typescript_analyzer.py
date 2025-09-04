@@ -51,16 +51,25 @@ class TypeScriptAnalyzer:
                 startupinfo=startupinfo
             )
             
-            result = json.loads(process.stdout)
-            if result.get("error"):
-                print(f"Warning: Error analyzing {file_path}: {result['error']}", file=sys.stderr)
+            raw_result = json.loads(process.stdout)
+            if raw_result.get("error"):
+                print(f"Warning: Error analyzing {file_path}: {raw_result['error']}", file=sys.stderr)
                 return {}
+
+            # ★ 修正: PythonAnalyzerの出力形式に合わせて変換
+            result = {
+                'functions': raw_result.get('functions', {}),
+                'function_locations': self._extract_function_locations(raw_result, abs_path),
+                'imports': raw_result.get('imports', {}),
+                'full_imports': {},  # TypeScriptでは現状未対応
+                'function_calls': self._convert_function_calls(raw_result.get('function_calls', {}))
+            }
 
             self._cache[abs_path] = result
             return result
         except FileNotFoundError:
             print("Error: 'node' command not found. Please ensure Node.js is installed and in your PATH.", file=sys.stderr)
-            sys.exit(1)
+            return {}
         except subprocess.CalledProcessError as e:
             print(f"Error: TypeScript parser script failed for {file_path}", file=sys.stderr)
             print(e.stderr, file=sys.stderr)
@@ -71,6 +80,20 @@ class TypeScriptAnalyzer:
         except Exception as e:
             print(f"An unexpected error occurred in TypeScriptAnalyzer: {e}", file=sys.stderr)
             return {}
+
+    def _extract_function_locations(self, raw_result: Dict[str, Any], file_path: str) -> Dict[str, Dict[str, Any]]:
+        """
+        TypeScriptパーサーから関数位置情報を抽出
+        """
+        # ★ 改善: TypeScriptパーサーが位置情報を提供するようになったので、それを使用
+        return raw_result.get('function_locations', {})
+
+    def _convert_function_calls(self, raw_function_calls: Dict[str, list]) -> Dict[str, list]:
+        """
+        TypeScriptパーサーの関数呼び出し形式をPythonAnalyzer形式に変換
+        """
+        # ★ 改善: TypeScriptパーサーが既に適切な形式を返すようになった
+        return raw_function_calls
 
     def resolve_import_path(self, module_path: str, current_file: str) -> Optional[str]:
         """

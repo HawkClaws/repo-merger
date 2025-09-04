@@ -28,7 +28,7 @@ LLM（大規模言語モデル）との対話を効率化するために設計�
 pip install repo-merger-cli
 
 # GitHubリポジトリから直接インストール
-pip install git+https://github.com/あなたのユーザー名/あなたのリポジトリ名.git
+pip install git+https://github.com/HawkClaws/repo-merger.git
 ```
 
 **要件:**
@@ -40,6 +40,39 @@ pip install git+https://github.com/あなたのユーザー名/あなたのリ�
 ## 🚀 使い方
 
 インストールが完了すると、`repo-merge`と`code-collector`の2つのコマンドが利用可能になります。
+
+### 🎯 New! インタラクティブモード (推奨)
+
+**最も簡単な方法**: ファイル名や関数名を覚える必要がありません！
+
+```bash
+# プロジェクトディレクトリで実行
+cd your-project
+code-collector -i
+```
+
+**特徴:**
+- 🔍 **検索機能**: 関数名やファイル名で検索
+- 📋 **一覧表示**: プロジェクト内の全関数をページネーション表示
+- 🎨 **言語対応**: Python、TypeScript、JavaScript、React自動判別
+- 💾 **結果選択**: クリップボード、ファイル保存、プレビューから選択
+
+**使用例:**
+```
+👉 Enter your choice: process_data
+✅ Found exact match: main.py::process_data
+
+👉 Enter your choice: f:service
+🔍 Found 8 functions in files matching 'service'
+
+👉 Enter your choice: list
+📋 Functions (Page 1/3):
+  1. main.py::main
+  2. utils.py::helper_function
+  ...
+```
+
+詳細は [INTERACTIVE_GUIDE.md](INTERACTIVE_GUIDE.md) を参照してください。
 
 ### repo-merge コマンド
 

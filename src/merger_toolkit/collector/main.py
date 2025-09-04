@@ -4,7 +4,6 @@ import sys
 import argparse
 from merger_toolkit.collector.core import CodeCollector
 
-# --- クリップボード機能のためのインポート ---
 try:
     import pyperclip
     PYPERCLIP_AVAILABLE = True
@@ -17,13 +16,45 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument("input_dir", nargs='?', default='.', help="Path to the project's root directory (default: current directory).")
-    parser.add_argument("-f", "--file", required=True, help="Path to the file containing the starting function.")
-    parser.add_argument("-func", "--function", required=True, help="Name of the starting function to trace.")
+    parser.add_argument("-f", "--file", help="Path to the file containing the starting function.")
+    parser.add_argument("-func", "--function", help="Name of the starting function to trace.")
     parser.add_argument("-o", "--output", metavar="OUTPUT_FILE", default=None, help="Path to the output file. If not specified, content is copied to the clipboard.")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable detailed logging for debugging.")
+    parser.add_argument("-i", "--interactive", action="store_true", help="Launch interactive mode for easy function selection.")
     
     args = parser.parse_args()
 
-    # --- 入力値の検証 ---
+    # ★ 新機能: インタラクティブモード
+    if args.interactive:
+        try:
+            # まずTUI版を試す
+            from merger_toolkit.collector.interactive import run_interactive_mode
+            return run_interactive_mode(args.input_dir, args.verbose)
+        except ImportError:
+            # TUI版が使えない場合はシンプル版にフォールバック
+            try:
+                from merger_toolkit.collector.simple_interactive import run_simple_interactive_mode
+                print("🔄 Falling back to simple interactive mode (TUI not available)")
+                return run_simple_interactive_mode(args.input_dir, args.verbose)
+            except Exception as e:
+                print(f"\nError in simple interactive mode: {e}", file=sys.stderr)
+                return 1
+        except Exception as e:
+            # TUI版でエラーが発生した場合もシンプル版にフォールバック
+            try:
+                from merger_toolkit.collector.simple_interactive import run_simple_interactive_mode
+                print(f"🔄 TUI error ({e}), falling back to simple mode")
+                return run_simple_interactive_mode(args.input_dir, args.verbose)
+            except Exception as e2:
+                print(f"\nError in interactive mode: {e2}", file=sys.stderr)
+                return 1
+
+    # 従来のコマンドラインモード
+    if not args.file or not args.function:
+        print("\nError: Both --file and --function are required in command-line mode.", file=sys.stderr)
+        print("Use --interactive (-i) for interactive selection, or provide both arguments.", file=sys.stderr)
+        return 1
+
     if not args.output and not PYPERCLIP_AVAILABLE:
         print("\nError: To copy to clipboard, 'pyperclip' library is required.", file=sys.stderr)
         print("Please install it ('pip install pyperclip') or use the -o/--output option.", file=sys.stderr)
@@ -36,15 +67,16 @@ def main():
         return 1
 
     try:
-        # --- コアロジックの実行 ---
-        collector = CodeCollector(project_root=args.input_dir)
+        collector = CodeCollector(
+            project_root=args.input_dir,
+            verbose=args.verbose
+        )
         collected_content = collector.collect(start_file=args.file, start_function=args.function)
 
         if not collected_content.strip():
             print("\nWarning: No code was collected. Check if the function and file names are correct.")
             return 0
 
-        # --- 出力処理 ---
         if args.output:
             output_path = os.path.abspath(args.output)
             try:
@@ -69,7 +101,6 @@ def main():
         return 1
     except Exception as e:
         print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
-        # デバッグ用にスタックトレースを表示
         import traceback
         traceback.print_exc()
         return 1

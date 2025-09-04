@@ -17,6 +17,12 @@ dependencies = [
     "pathspec>=0.11.0",
 ]
 
+[project.optional-dependencies]
+interactive = [
+    "rich>=13.0.0",
+    "textual>=0.50.0",
+]
+
 [project.scripts]
 repo-merge = "merger_toolkit.merger.cli:main"
 code-collector = "merger_toolkit.collector.main:main"
