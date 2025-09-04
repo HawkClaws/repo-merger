@@ -4,6 +4,8 @@ from collections import deque
 from merger_toolkit.collector.python_analyzer import PythonAnalyzer
 from merger_toolkit.collector.typescript_analyzer import TypeScriptAnalyzer
 import re
+import pathspec
+from typing import Optional
 
 class CodeCollector:
     def __init__(self, project_root: str, verbose: bool = False):
@@ -15,6 +17,9 @@ class CodeCollector:
         }
         self.collected_code: dict[str, set[str]] = {}
         self.processed_items: set[tuple[str, str]] = set()
+        
+        # ★ gitignore サポート追加
+        self._gitignore_cache: dict[str, Optional[pathspec.PathSpec]] = {}
 
     def _get_analyzer_for_file(self, file_path: str):
         ext = os.path.splitext(file_path)[1].lower()
@@ -24,15 +29,104 @@ class CodeCollector:
             return self.analyzers['typescript']
         return None
 
+    def _get_combined_gitignore_spec(self, dir_path: str) -> Optional[pathspec.PathSpec]:
+        """
+        指定されたディレクトリの.gitignoreルールを取得（親ディレクトリのルールも含む）
+        
+        Args:
+            dir_path: ディレクトリパス
+            
+        Returns:
+            pathspec.PathSpec: 結合された.gitignoreルール
+        """
+        if dir_path in self._gitignore_cache:
+            return self._gitignore_cache[dir_path]
+            
+        # 親ディレクトリのgitignore仕様を取得
+        parent_dir = os.path.dirname(dir_path)
+        if parent_dir != dir_path and parent_dir:  # ルートでない場合
+            parent_spec = self._get_combined_gitignore_spec(parent_dir)
+        else:
+            parent_spec = None
+            
+        # 現在のディレクトリの.gitignoreを確認
+        local_gitignore_path = os.path.join(dir_path, '.gitignore')
+        local_spec = None
+        
+        if os.path.isfile(local_gitignore_path):
+            try:
+                with open(local_gitignore_path, 'r', encoding='utf-8') as f:
+                    local_spec = pathspec.PathSpec.from_lines('gitwildmatch', f)
+                if self.verbose:
+                    rel_path = os.path.relpath(local_gitignore_path, self.project_root)
+                    print(f"Found .gitignore at: {rel_path}")
+            except Exception as e:
+                if self.verbose:
+                    print(f"Warning: Could not read .gitignore at {local_gitignore_path}: {e}")
+        
+        # 親と現在のルールを結合
+        combined_spec = None
+        if parent_spec and local_spec:
+            # 両方のパターンを結合
+            combined_patterns = list(parent_spec.patterns) + list(local_spec.patterns)
+            combined_spec = pathspec.PathSpec(combined_patterns)
+        elif parent_spec:
+            combined_spec = parent_spec
+        elif local_spec:
+            combined_spec = local_spec
+            
+        self._gitignore_cache[dir_path] = combined_spec
+        return combined_spec
+
     def _find_all_source_files(self) -> list[str]:
+        """
+        プロジェクト内の全ソースファイルを検索（.gitignoreルールを考慮）
+        
+        Returns:
+            list[str]: ソースファイルのパスリスト
+        """
         source_files = []
         excluded_dirs = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'env'}
+        
         for root, dirs, files in os.walk(self.project_root, topdown=True):
+            # 現在のディレクトリの.gitignoreルールを取得
+            current_gitignore_spec = self._get_combined_gitignore_spec(root)
+            
+            # ハードコードされた除外ディレクトリを削除
             dirs[:] = [d for d in dirs if d not in excluded_dirs]
+            
+            # .gitignoreルールでディレクトリを除外
+            if current_gitignore_spec:
+                excluded_dirs_by_gitignore = []
+                
+                for d in dirs:
+                    dir_full_path = os.path.join(root, d)
+                    relative_dir_path = os.path.relpath(dir_full_path, self.project_root).replace("\\", "/")
+                    
+                    # ディレクトリのマッチングを確認（末尾スラッシュ有り無し両方）
+                    if (current_gitignore_spec.match_file(relative_dir_path) or 
+                        current_gitignore_spec.match_file(relative_dir_path + '/')):
+                        excluded_dirs_by_gitignore.append(d)
+                        if self.verbose:
+                            print(f"Skipping directory by .gitignore: {relative_dir_path}")
+                
+                dirs[:] = [d for d in dirs if d not in excluded_dirs_by_gitignore]
+            
+            # ファイルを処理
             for file in files:
                 ext = os.path.splitext(file)[1].lower()
                 if ext in ['.py', '.pyw', '.ts', '.tsx', '.js', '.jsx']:
-                    source_files.append(os.path.join(root, file))
+                    file_path = os.path.join(root, file)
+                    relative_file_path = os.path.relpath(file_path, self.project_root).replace("\\", "/")
+                    
+                    # .gitignoreルールでファイルを除外
+                    if current_gitignore_spec and current_gitignore_spec.match_file(relative_file_path):
+                        if self.verbose:
+                            print(f"Skipping file by .gitignore: {relative_file_path}")
+                        continue
+                    
+                    source_files.append(file_path)
+                    
         return source_files
     
     # ★ 変更点: 呼び出し元検索を、新しいアルゴリズムで完全に置き換え
