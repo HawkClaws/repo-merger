@@ -23,53 +23,159 @@ FORCE_EXCLUDE_EXTENSIONS = {
 FORCE_EXCLUDE_DIRS = {'.git'}
 
 
-def merge_repository_to_string(input_dir, gitignore_spec, final_exclude_dirs, final_exclude_ext, final_exclude_files, verbose=False):
+def merge_repository_to_string(input_dir, base_gitignore_spec, final_exclude_dirs, final_exclude_ext, final_exclude_files, verbose=False):
+    """
+    Merge repository files into a single string, respecting hierarchical .gitignore files.
+    
+    Args:
+        input_dir: Root directory to scan
+        base_gitignore_spec: Root-level gitignore spec (can be None)
+        final_exclude_dirs: Set of directory names to exclude
+        final_exclude_ext: Set of file extensions to exclude  
+        final_exclude_files: Set of file names to exclude
+        verbose: Whether to print verbose output
+    
+    Returns:
+        String containing merged content
+    """
     string_io = io.StringIO()
-    # (この関数のロジックは変更なし)
+    
+    # Cache for gitignore specs at each directory level
+    gitignore_cache = {}
+    
+    def get_combined_gitignore_spec(dir_path):
+        """Get combined gitignore spec for a given directory, including all parent gitignores."""
+        if dir_path in gitignore_cache:
+            return gitignore_cache[dir_path]
+            
+        # Start with parent gitignore specs
+        parent_dir = os.path.dirname(dir_path)
+        if parent_dir != dir_path and parent_dir:  # Not root
+            parent_spec = get_combined_gitignore_spec(parent_dir)
+        else:
+            parent_spec = base_gitignore_spec
+            
+        # Check for local .gitignore in current directory
+        local_gitignore_path = os.path.join(dir_path, '.gitignore')
+        local_spec = None
+        
+        if os.path.isfile(local_gitignore_path):
+            try:
+                with open(local_gitignore_path, 'r', encoding='utf-8') as f:
+                    local_spec = pathspec.PathSpec.from_lines('gitwildmatch', f)
+                if verbose:
+                    rel_path = os.path.relpath(local_gitignore_path, input_dir)
+                    print(f"Found .gitignore at: {rel_path}")
+            except Exception as e:
+                if verbose:
+                    print(f"Warning: Could not read .gitignore at {local_gitignore_path}: {e}")
+        
+        # Combine parent and local specs
+        combined_spec = None
+        if parent_spec and local_spec:
+            # Combine patterns from both specs
+            combined_patterns = list(parent_spec.patterns) + list(local_spec.patterns)
+            combined_spec = pathspec.PathSpec(combined_patterns)
+        elif parent_spec:
+            combined_spec = parent_spec
+        elif local_spec:
+            combined_spec = local_spec
+            
+        gitignore_cache[dir_path] = combined_spec
+        return combined_spec
+    
     for root, dirs, files in os.walk(input_dir, topdown=True):
+        # Get the appropriate gitignore spec for this directory
+        current_gitignore_spec = get_combined_gitignore_spec(root)
+        
+        # First, exclude directories by name
         dirs[:] = [d for d in dirs if d not in final_exclude_dirs]
-        if gitignore_spec:
-            dir_paths_for_gitignore = {os.path.relpath(os.path.join(root, d), input_dir).replace("\\", "/") + '/' for d in dirs}
-            excluded_by_gitignore = {os.path.basename(p.rstrip('/')) for p in gitignore_spec.match_files(dir_paths_for_gitignore)}
-            if verbose and excluded_by_gitignore: print(f"Skipping directories in '{root}' by .gitignore: {', '.join(sorted(list(excluded_by_gitignore)))}")
-            dirs[:] = [d for d in dirs if d not in excluded_by_gitignore]
+        
+        # Then, exclude directories by gitignore rules
+        if current_gitignore_spec:
+            # Convert directory paths to relative paths from input_dir for gitignore matching
+            dir_paths_for_gitignore = []
+            excluded_dirs = []
+            
+            for d in dirs:
+                dir_full_path = os.path.join(root, d)
+                relative_dir_path = os.path.relpath(dir_full_path, input_dir).replace("\\", "/")
+                
+                # Check both with and without trailing slash as different gitignore implementations vary
+                if (current_gitignore_spec.match_file(relative_dir_path) or 
+                    current_gitignore_spec.match_file(relative_dir_path + '/')):
+                    excluded_dirs.append(d)
+                    if verbose:
+                        print(f"Skipping directory by .gitignore: {relative_dir_path}")
+            
+            dirs[:] = [d for d in dirs if d not in excluded_dirs]
+        
+        # Process files
         sorted_files = sorted(files)
         for filename in sorted_files:
+            # Skip .gitignore files themselves in the output
+            if filename == '.gitignore':
+                continue
+                
             file_path = os.path.join(root, filename)
             relative_path = os.path.relpath(file_path, input_dir).replace("\\", "/")
             _, ext = os.path.splitext(filename)
-            if gitignore_spec and gitignore_spec.match_file(relative_path):
-                if verbose: print(f"Skipping by .gitignore: {relative_path}")
+            
+            # Check gitignore rules
+            if current_gitignore_spec and current_gitignore_spec.match_file(relative_path):
+                if verbose:
+                    print(f"Skipping by .gitignore: {relative_path}")
                 continue
+                
+            # Check file extension exclusions
             if ext.lower() in final_exclude_ext:
-                if verbose: print(f"Skipping file by extension: {relative_path}")
+                if verbose:
+                    print(f"Skipping file by extension: {relative_path}")
                 continue
+                
+            # Check file name exclusions  
             if filename in final_exclude_files:
-                if verbose: print(f"Skipping file by name: {relative_path}")
+                if verbose:
+                    print(f"Skipping file by name: {relative_path}")
                 continue
-            if verbose: print(f"Processing: {relative_path}")
+                
+            if verbose:
+                print(f"Processing: {relative_path}")
+                
             try:
                 string_io.write(f"```{relative_path}\n")
                 content = ""
                 error_message = None
+                
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as infile: content = infile.read()
+                    with open(file_path, 'r', encoding='utf-8') as infile:
+                        content = infile.read()
                 except (UnicodeDecodeError, IOError):
                     try:
-                        with open(file_path, 'r', encoding=None) as infile: content = infile.read()
-                        if verbose: print(f"  Note: Read '{relative_path}' with system default encoding.")
-                    except Exception as e: error_message = f"# ERROR: Could not read file (tried UTF-8 and default): {e}\n"
-                except Exception as e: error_message = f"# ERROR: Unexpected error reading file: {e}\n"
+                        with open(file_path, 'r', encoding=None) as infile:
+                            content = infile.read()
+                        if verbose:
+                            print(f"  Note: Read '{relative_path}' with system default encoding.")
+                    except Exception as e:
+                        error_message = f"# ERROR: Could not read file (tried UTF-8 and default): {e}\n"
+                except Exception as e:
+                    error_message = f"# ERROR: Unexpected error reading file: {e}\n"
+                
                 if error_message:
                     string_io.write(error_message)
-                    if verbose: print(f"  {error_message.strip()}")
+                    if verbose:
+                        print(f"  {error_message.strip()}")
                 else:
-                    if content and not content.endswith('\n'): content += '\n'
+                    if content and not content.endswith('\n'):
+                        content += '\n'
                     string_io.write(content)
+                    
                 string_io.write(f"```\n\n")
+                
             except Exception as e:
                 print(f"Error processing block for file {relative_path}: {e}")
                 string_io.write(f"``` Error Processing {relative_path}\n# ERROR: Unexpected error: {e}\n```\n\n")
+    
     return string_io.getvalue()
 
 
@@ -92,21 +198,28 @@ def main():
         print(f"Error: Input directory '{args.input_dir}' not found.", file=sys.stderr)
         return 1
         
-    gitignore_spec = None
+    base_gitignore_spec = None
     if not args.no_gitignore:
-        gitignore_path = os.path.join(args.input_dir, '.gitignore')
-        if os.path.isfile(gitignore_path):
-            if args.verbose: print(f"Using local .gitignore from: {gitignore_path}")
-            with open(gitignore_path, 'r', encoding='utf-8') as f:
-                gitignore_spec = pathspec.PathSpec.from_lines('gitwildmatch', f)
+        # Check for root-level .gitignore
+        root_gitignore_path = os.path.join(args.input_dir, '.gitignore')
+        if os.path.isfile(root_gitignore_path):
+            if args.verbose: 
+                print(f"Using root .gitignore from: {root_gitignore_path}")
+            with open(root_gitignore_path, 'r', encoding='utf-8') as f:
+                base_gitignore_spec = pathspec.PathSpec.from_lines('gitwildmatch', f)
         else:
-            if args.verbose: print("No local .gitignore found. Attempting to use built-in default .gitignore.")
+            if args.verbose: 
+                print("No root .gitignore found. Attempting to use built-in default .gitignore.")
             try:
-                # 変更点: パッケージ内のリソースへのパスを新しい構造に合わせて修正
+                # Use built-in default gitignore as base
                 default_gitignore_content = resources.files('merger_toolkit.merger.data').joinpath('default.gitignore').read_text(encoding='utf-8')
-                gitignore_spec = pathspec.PathSpec.from_lines('gitwildmatch', default_gitignore_content.splitlines())
+                base_gitignore_spec = pathspec.PathSpec.from_lines('gitwildmatch', default_gitignore_content.splitlines())
             except (FileNotFoundError, ModuleNotFoundError):
-                if args.verbose: print("Warning: Built-in default .gitignore not found. Proceeding without gitignore rules.")
+                if args.verbose: 
+                    print("Warning: Built-in default .gitignore not found. Proceeding without base gitignore rules.")
+        
+        if args.verbose:
+            print("Note: Will also check for .gitignore files in subdirectories during traversal.")
 
     final_exclude_dirs = set(FORCE_EXCLUDE_DIRS)
     final_exclude_ext = {ext.lower() for ext in FORCE_EXCLUDE_EXTENSIONS}
@@ -117,7 +230,7 @@ def main():
     
     try:
         merged_content = merge_repository_to_string(
-            args.input_dir, gitignore_spec, final_exclude_dirs,
+            args.input_dir, base_gitignore_spec, final_exclude_dirs,
             final_exclude_ext, final_exclude_files, args.verbose
         )
         if not merged_content.strip():
